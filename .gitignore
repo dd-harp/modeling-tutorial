@@ -2,3 +2,5 @@
 report_outputs
 .Rhistory
 *.Rproj
+libraries/*
+data/sim_outputs/*
