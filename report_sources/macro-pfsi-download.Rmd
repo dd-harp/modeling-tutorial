@@ -25,6 +25,8 @@ Install and load `macro.pfsi` from repo - default target directory will be `/lib
 
 ```{r Load macro.pfsi from repo, eval=FALSE}
 # Check that the target directory there:
+output_dir = here("libraries")
+if (!dir.exists(output_dir)) {dir.create(output_dir)}
 output_dir = here("libraries/macro.pfsi")
 if (!dir.exists(output_dir)) {dir.create(output_dir)}
 

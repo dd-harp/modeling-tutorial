@@ -23,12 +23,13 @@ Things to discuss:
 First run `macro-pfsi-download.Rmd` and make sure that `macro.pfsi` library is available. Make sure that you are pointing to the correct directory; if this throws errors then we will need to fix things before we proceed.
 ```{r Call Libraries}
 library(data.table)
+library(ggplot2)
 library(Matrix)
+# in case you need to re-load the here library:
+#library(here, lib.loc = "/ihme/malaria_modeling/dtcitron/Rlibs/")
 
 library(RcppArmadillo, lib.loc = here("libraries/macro.pfsi"))
 library(macro.pfsi, lib.loc = here("libraries/macro.pfsi"))
-library(RcppProgress)
-
 ```
 
 Set the random seed for setting initial conditions
@@ -42,6 +43,7 @@ set.seed(42L)
 In the following code blocks, we will start to build the software object that lets us run a specific simulation. This will require specifying parameters. Different parameters are entered into the simulation in different places.  Right now each of those places roughly maps onto a different module:
 
 ### Course of infection:
+(This can be parameterized differently in a lot of ways)
 ```{r Course of Infection Setup}
 # vector of parameters describing course of infection - PfSI
 pfsi_pars <- pfsi_parameters(mnChemoprophylaxisPf = 32, # duration of chemoprophylaxis
@@ -49,6 +51,8 @@ pfsi_pars <- pfsi_parameters(mnChemoprophylaxisPf = 32, # duration of chemoproph
                              peBlockPf = 1, # % decrease in transmission efficiency of new infections
                              mnPEPf = 200, vrPEPf = 50 # duration of  PE vaccine
                              )
+# check on all of the other parameters we can change
+pfsi_parameters()
 ```
 
 ### Patch setup
@@ -102,8 +106,12 @@ n.humans <- sum(patch_sizes) # total number of humans
 # Given that each patch has 50% infected people at the start of the simulation
 # we randomly assign each person in each patch to have initial state of infected or susceptible
 init_state <- unlist(mapply(FUN = function(n.patch,pr){
-  sample(x = c("I","S"),size = n.patch,replace = T,prob = c(pr,1-pr))
-},n=patch_sizes,pr=pfpr,SIMPLIFY = F))
+  sample(x = c("I","S"), 
+         size = n.patch,
+         replace = T,
+         prob = c(pr,1-pr))
+  },
+  n=patch_sizes,pr=pfpr,SIMPLIFY = F))
 
 # Assign a patch ID to each human (0-indexed, because these variables go into C++)
 patch_id <- rep(0:(n.patch-1),times=patch_sizes)
@@ -234,5 +242,166 @@ ggplot(data = h) +
 # ggplot(pfsi_pr) +
 #   geom_line(aes(x=time,y=value,color=key)) +
 #   facet_wrap(. ~ patch) +
+#   theme_bw()
+```
+
+
+
+## Ensemble modeling
+It isn't enough to produce a single simulation output - our simulations are stochastic and the outputs are noisy. We can characterize this noise by simulating a big bunch - an ensemble - of different simulation "runs" where each run has the same parameters but a different random number seed for starting the initial conditions.
+
+```{r Run Ensemble}
+# Set number of simulation runs to 10
+nrun <- 10
+# Simulate for 1 year
+tsteps <- 365
+# Progress bar, for convenient perusal
+pb <- txtProgressBar(min = 1,max = nrun)
+
+output_dir = here("data/sim_outputs/ensemble_run")
+if (!dir.exists(output_dir)) {dir.create(output_dir)}
+
+## Loop over runs:
+# Set output location
+# Set random seed each time
+# Set initial conditions each time
+for(i in 1:nrun){
+  # set output location
+  log_pars <- list()
+  human.out.path <- here("data/sim_outputs/ensemble_run", paste0("pfsi_ens_",i,".csv"))
+  log_pars[[1]] <- list(outfile = human.out.path, 
+                        key = "pfsi",
+                        header = paste0(c("time",
+                                          "patch",
+                                          unlist(lapply(c("S","I","P"),function(x){
+                                            paste0(x,c("_visitor","_resident_home","_resident_away"))}
+                                            )),
+                                          "incidence_resident",
+                                          "incidence_traveller"),
+                                        collapse = ",")
+                      )
+
+  mosy.out.path <-  here("data/sim_outputs/ensemble_run", paste0("mosy_ens_",i,".csv"))
+  log_pars[[2]] <- list(outfile = mosy.out.path,
+                        key = "mosquito",
+                        header = paste0(c("time",
+                                          "state",
+                                          paste0("patch",1:n.patch)),
+                                        collapse = ","))
+  
+  # set seed for reproducibility
+  set.seed(i)
+  
+  # set initial conditions
+  init_state <- unlist(mapply(FUN = function(n.patch,pr){
+  sample(x = c("I","S"), 
+         size = n.patch,
+         replace = T,
+         prob = c(pr,1-pr))
+    },
+    n=patch_sizes, 
+    pr=pfpr, 
+    SIMPLIFY = F)
+  )
+
+  # the data structure that will be passed down to C++ to construct the human pop
+  human_pars <- vector("list",n.humans)
+  for(j in 1:n.humans){
+    human_pars[[j]] <- human_pfsi_conpars(id = j-1,
+                                          home_patch_id = patch_id[j],
+                                          trip_duration = rep(3,n.patch), 
+                                          trip_frequency = 1/20, 
+                                          bweight = bweights[j],
+                                          age = 20, 
+                                          state = init_state[j],
+                                          bite_algorithm = 0)
+  }
+  
+  run_macro(tmax = tsteps,
+            human_pars = human_pars,
+            mosquito_pars = mosy_pars,
+            patch_pars = patch_pars,
+            model_pars = pfsi_pars,
+            log_streams = log_pars,
+            vaxx_events = NULL,
+            verbose = FALSE)
+  
+    setTxtProgressBar(pb,i)
+}
+```
+
+Instead of analyzing a single simulation runs, we now have to examine an ensemble of 10 simulation runs. We can calculate statistics across the ensemble - mean and standard deviation, for example.
+```{r}
+ensemble.file.list <- list.files(path = here("data/sim_outputs/ensemble_run"), 
+                                 pattern = "pfsi_ens_[[:digit:]]+.csv")
+# load in the first one
+df_curr <- fread(here("data/sim_outputs/ensemble_run",ensemble.file.list[1]))
+# copy it to create the corresponding matrix:
+mat_curr <- as.matrix(df_curr)
+# then we use that matrix to create holders to catch data for the means and standard deviations:
+mat_mean <- mat_curr[, 3:ncol(mat_curr)]
+mat_sd <-  mat_mean^2
+
+# now we loop over the other files in the list of ensemble outputs
+nrun = length(ensemble.file.list)
+for (i in 2:nrun){
+  df_curr <-  fread(here("data/sim_outputs/ensemble_run",ensemble.file.list[i]))
+  mat_curr <- as.matrix(df_curr)
+  mat_mean <- mat_mean + mat_curr[, 3:ncol(mat_curr)]
+  mat_sd <-  mat_sd + mat_curr[, 3:ncol(mat_curr)]^2
+}
+
+# A kludge for how we calculate mean and standard deviation, without needing to load in 
+# all outputs at the same time:
+mat_mean <- mat_mean/nrun
+mat_sd <- sqrt(mat_sd/nrun - mat_mean^2)
+
+mat_mean <- cbind(df_curr[,1:2], as.data.table(mat_mean))
+mat_sd <- cbind(df_curr[,1:2], as.data.table(mat_sd))
+```
+
+Plot, with error bars:
+```{r}
+h <- melt(mat_mean, 
+     id.vars = c("time", "patch"), 
+     measure.vars = c("S_visitor","S_resident_home","S_resident_away",
+                      "I_visitor","I_resident_home","I_resident_away",
+                      "P_visitor","P_resident_home","P_resident_away"),
+     value.name = "counts")
+
+h.sd <- melt(mat_sd, 
+     id.vars = c("time", "patch"), 
+     measure.vars = c("S_visitor","S_resident_home","S_resident_away",
+                      "I_visitor","I_resident_home","I_resident_away",
+                      "P_visitor","P_resident_home","P_resident_away"),
+     value.name = "counts.sd")
+
+h <- merge(h, h.sd, by = c("time", "patch", "variable"))
+
+ggplot(h) + 
+  geom_errorbar(mapping = aes(x = time, ymin = counts - counts.sd, ymax = counts + counts.sd, color = variable, alpha = .1)) +
+  geom_point(mapping = aes(x = time, y = counts), size = .01) + 
+  facet_wrap(~patch)
+```
+
+
+Another way of analyzing the ensemble of simulation runs, brought you by Tidyverse:
+```{r Tidyverse (old) post-processing}
+# library(tidyverse)
+# 
+# pfsi_ensemble <-
+#   list.files(path = here("data/sim_outputs/ensemble_run"),pattern = "pfsi_ens_[[:digit:]]+.csv") %>%
+#   map_df(~read_csv(paste0(here("data/sim_outputs/ensemble_run/"),.)),.id = "run")
+# 
+# pfsi_ensemble_pr <- pfsi_ensemble %>%
+#   select(-ends_with("away")) %>%
+#   select(-starts_with("incidence")) %>%
+#   gather(key, value, -time,-patch,-run)
+# 
+# ggplot(pfsi_ensemble_pr,aes(x=time,y=value,color=key,fill=key)) +
+#   stat_summary(fun.data = median_hilow,fun.args = list(conf.int = 0.95),geom = "ribbon",alpha=0.4,color=NA) +
+#   stat_summary(geom="line", fun.y="mean") +
+#   facet_wrap(. ~ patch) +
+#   guides(color = FALSE) +
 #   theme_bw()
 ```
