@@ -9,20 +9,19 @@ Run this script first - we will use this script to download the libraries that w
 
 ```{r}
 library(devtools)
-library(here)
+library(here, lib.loc = "/ihme/malaria_modeling/libraries")
 library(withr)
 ```
 
-We are going to use `here` to bundle everthing that you'll need together in one directory.
+We are going to use `here` to bundle everthing that you'll need together in one directory. (Note that `here` is installed in the `/malaria_modeling/libraries` location, a new directory which we will use to share libraries!)
 
-Check the current path location - if you're working inside the `MASH-group-tutorial.Rproj` then the `here` library should default to setting the current path location accordingly. If you want to change that, feel free to do so.
+Check your path location - I recommend setting it to the `/modeling-tutorial` directory -
 ```{r}
 #setwd("pick/your/favorite/location")
 here()
 ```
 
-Install and load `macro.pfsi` from repo - default target directory will be `/libraries/macro.pfsi`. Alternatively, if you are working remotely on the cluster in the `/ihme/malaria_modeling` directory you can find where I've installed it at `/ihme/malaria_modeling/dtcitron/Rlibs/macro.pfsi`.
-
+Install and load `macro.pfsi` from repo - default target directory will be `/libraries/macro.pfsi`.
 ```{r Load macro.pfsi from repo, eval=FALSE}
 # Check that the target directory there:
 output_dir = here("libraries")
