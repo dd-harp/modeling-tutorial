@@ -1,0 +1,15 @@
+---
+title: "bioko-data-wrangling.Rmd"
+author: "Daniel T. Citron"
+date: "1/21/2020"
+output: html_document
+---
+
+We have just looked at `mash-macro-workflow.Rmd` and seen all of the ways that we need to specify parameters in a MASH simulation. The trick now is to figure out how to take data from the MIS data sets and use that to figure out how to turn the data into numbers that we can then use to simulate Bioko Island.
+
+We will start by loading and examining a few data sets, and then discuss how we can use them to specify the parameters that we need to set up and run a simulation that resembles Bioko Island.
+
+We will refer to the data that are stored in `/ihme/malaria_modeling/data/BIMEP_2019_Data`.
+
+# Census data
+Where do people live? How many people live in each map-area pixel?
