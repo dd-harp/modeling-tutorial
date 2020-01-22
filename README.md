@@ -14,7 +14,7 @@ Directories:
 Specific scripts:
 
 * `mash-macro-workflow.Rmd` - a tutorial for how to set up and analyze a nontrivial simulation
-* `bioko-data-wrangling` - some example scripts for how to preprocess the Bioko Island data for the purpose of running a MASH simulation
+* `bioko_data_wrangling.Rmd` - some example scripts for how to preprocess the Bioko Island data for the purpose of running a MASH simulation, along with some discussion questions considering how we use the data
 * `bioko-mash-macro-workflow.Rmd` - a tutorial for how to simulate Bioko Island, and calibrating using the Bioko Island data.
 
 

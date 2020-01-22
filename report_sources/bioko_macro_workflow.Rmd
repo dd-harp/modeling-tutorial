@@ -64,7 +64,7 @@ rho = FeverPf*TreatPf # probability of clearing infection through treatment casc
 We need to perform some arithmetic to convert the travel data into a TaR matrix.
 ```{r TaR matrix}
 # get the region - to - pixel matrix
-source(here("report_sources/region_to_areaId_mapping.R"))
+source(here("scripts/region_to_areaId_mapping.R"))
 # convert the trip.dest.data into a matrix
 trip.dest.mat <- as.matrix(trip.dest.data[year == 2018 & draw == "draw.mean", .(t_eg, ti_ban, ti_lub, ti_mal, ti_mok, ti_ria, ti_ure)])
 trip.dest.mat <- rbind(trip.dest.mat, matrix(c(1,0,0,0,0,0,0), ncol = 7))
