@@ -5,11 +5,153 @@ date: "1/21/2020"
 output: html_document
 ---
 
+```{r Load Libraries}
+library(data.table)
+library(rgdal, quietly = TRUE)
+```
+
 We have just looked at `mash-macro-workflow.Rmd` and seen all of the ways that we need to specify parameters in a MASH simulation. The trick now is to figure out how to take data from the MIS data sets and use that to figure out how to turn the data into numbers that we can then use to simulate Bioko Island.
 
 We will start by loading and examining a few data sets, and then discuss how we can use them to specify the parameters that we need to set up and run a simulation that resembles Bioko Island.
 
 We will refer to the data that are stored in `/ihme/malaria_modeling/data/BIMEP_2019_Data`.
+```{r}
+data.path = "/ihme/malaria_modeling/data/BIMEP_2019_Data/data/clean/"
+```
 
-# Census data
+
+
+# 2018 Census data:
 Where do people live? How many people live in each map-area pixel?
+```{r}
+pop.data <- fread(paste0(data.path,"aggregated_2015_2018_travel_data.csv"))
+View(pop.data[,.(areaId, pop, year)])
+```
+
+Visualize using a map:
+```{r Map set-up}
+bioko <- rgdal::readOGR(paste0(data.path, "BI_maps/bioko"), "bioko_admin1")
+areas_inh <- rgdal::readOGR(paste0(data.path, "BI_maps/areas_inh") , "areas_inh")
+areasf <- fortify(areas_inh, region = "areaId")
+```
+
+```{r Create the map}
+# Focus on the 2018 data
+plot.data <- pop.data[year ==2018,.(areaId, pop)]
+plot.data = merge(areasf, plot.data, by.x = "id", by.y = "areaId", all=TRUE)
+
+# Here's where we generate the template for making island plots
+p1 = ggplot(data = plot.data, aes(x=long, y=lat, group = group))
+p2 = p1 + geom_polygon(data = bioko, aes(x = long, y = lat, group = group), 
+                       color = "black", fill="grey", size = 0.25)
+p2 + geom_polygon(data = plot.data, aes(x = long, y = lat, group = group, fill = pop), color = NA, size = 0.25)
+
+# Try changing the fill to log(pop) and see how the plot changes
+```
+(Of course, we can also do this with QGIS/ArcGIS or other such tools)
+
+Questions for modeling:
+* How many patches do we have?
+* How many people go in each patch?
+
+# PfPR data:
+```{r PfPR data}
+pfpr.data <- fread(paste0(data.path,"pfpr_draws.csv"))
+
+# Merge with the population data to include areaId
+pfpr.data <- merge(pfpr.data, pop.data[year == 2018, .(areaId)], by = "areaId", all = FALSE)
+
+# View the mean PfPR draw, and five other single draws
+View(pfpr.data[,.(areaId, draw.mean, draw.1, draw.2, draw.3, draw.4, draw.5)])
+```
+
+Visualize using a map:
+```{r PfPR map}
+plot.data = merge(areasf, pfpr.data, by.x = "id", by.y = "areaId", all=TRUE)
+p2 + geom_polygon(data = plot.data, aes(x = long, y = lat, group = group, fill = draw.mean), color = NA, size = 0.25) +
+  scale_fill_gradient(name="PR", low="yellow", high="red", limits=c(0, .43)) 
+
+```
+
+Questions for modeling:
+ * How do the PfPR estimates enter into our simulation?
+ * What assumptions are we making when we use this particular set of PfPR estimates to set parameters in the simulation?
+
+# Travel data:
+We will look at trip duration, just as an example. We will distinguish between on-island and off-island travel.
+
+First, let's look at the distribution of trip durations for travel to the mainland; opening the raw MIS data file
+```{r}
+eg.dat <- fread("/ihme/malaria_modeling/data/BIMEP_2019_Data/data/raw/2018_travel_data/trips_to_EG.csv")
+# Filter out everything that doesn't have a night count associated with it
+eg.dat <- eg.dat[!is.na(nights)]
+View(eg.dat)
+```
+
+Make a histogram, showing distribution of nights traveled across all surveyed who reported traveling
+```{r}
+# Make a histogram
+h <- hist(eg.dat$nights, breaks = seq(0,380,7))
+```
+
+Fit an exponential decay to the data, using maximum likelihood to find the free parameter:
+```{r}
+# Fit to an exponential decay, using maximum likelihood:
+f <- optimise(f = function(l){
+  sum(dexp(x = eg.dat[!is.na(nights)]$nights, rate = l, log = TRUE))
+  }, 
+  interval = c(0,1), 
+  maximum = TRUE)
+# This is the decay rate that maximizes the likelihood
+lambda.eg <- f$maximum # 0.04713604
+# mean number of days spent off-island
+1/lambda.eg
+```
+
+
+Compare with data:
+```{r}
+# Plot the data, just to show that it works okay:
+plot(h$breaks[1:54] + 3.5, h$density, col = "blue")
+# and the fit itself
+x <- seq(0,370,1)
+y <- dexp(x = x, rate = lambda.eg, log = FALSE)
+plot(h$breaks[1:54] + 3.5, h$density, col = "blue")
+points(x,y, add =TRUE, axes = FALSE)
+```
+
+Next, we do the same thing for the travel within the island:
+```{r}
+bi.dat <- fread("/ihme/malaria_modeling/data/BIMEP_2019_Data/data/raw/2018_travel_data/trips_on_BI.csv")
+bi.dat <- bi.dat[!is.na(nights)]
+View(bi.dat)
+```
+
+Make a histogram, showing the distribution of nights traveled on-island:
+```{r}
+h <- hist(bi.dat$nights, breaks = seq(0,271,1))
+```
+Fit an exponential decay to the data:
+```{r}
+f.bi.all <- optimise(f = function(l){
+    sum(dexp(x = bi.dat$nights, rate = l, log = TRUE))
+  }, 
+  interval = c(0,1), 
+  maximum = TRUE)
+lambda.bi.all <- f.bi.all$maximum # 0.09670302
+1/f.bi.all$maximum # average is a 10-day stay
+```
+
+Plot histogram agaisnt fitted model:
+```{r}
+h <- hist(bi.dat$nights, breaks = seq(0,271,1))
+x <- seq(0,270,1)
+y <- dexp(x = x, rate = lambda.bi.all, log = FALSE)
+# Plot the data, just to show that it works okay:
+plot(h$breaks[1:271] + 1, h$density, col = "blue")
+points(x,y, add =TRUE, axes = FALSE)
+```
+
+Questions for modeling:
+  * Which parameters does this let us specify?
+  * What other ways might we use these data to help set parameters in our model?
