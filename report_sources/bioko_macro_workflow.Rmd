@@ -5,6 +5,8 @@ date: "1/22/2020"
 output: html_document
 ---
 
+As a supplement to the `bioko-mash-macro-workflow.Rmd` document; most of the methodology related to analyzing movement data and prevalence data together through a mechanistic model may be found in Nick Ruktanonchai's paper on using models to detect malaria hot spots in Namibia. (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4820264/)
+
 
 ```{r Load Libraries}
 library(data.table)

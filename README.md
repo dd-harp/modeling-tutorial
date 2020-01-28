@@ -40,3 +40,7 @@ For the sake of centralized convenience, we will show how to set up everything r
   5. Within the RStudio session, browse to the repo's directory
   6. Set up by running `macro-pfsi-download.Rmd` to download the library. Feel free to customize `output_dir` and `lib_loc` to pick your favorite location for storing libraries.
   7. Begin the tutorial by running `mash-macro-workflow.Rmd`, making sure to use the correct paths for loading the `macro.pfsi` library.
+
+------
+
+As a supplement to the `bioko-mash-macro-workflow.Rmd` document; most of the methodology related to analyzing movement data and prevalence data together through a mechanistic model may be found in [Nick Ruktanonchai's paper on using models to detect malaria hot spots in Namibia.](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4820264/)
